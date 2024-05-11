@@ -1,0 +1,858 @@
+---
+title: "Preliminary Final STA303 Project"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+## Importing the essential libraries
+library(ggplot2)
+library(tidyr)
+library(dplyr) # for pipe (%>%) operator
+library(reshape2)
+library(MASS)
+library(epiDisplay)
+library(rms)
+library(lmtest)
+library(car)
+library(glmnet) # LASSO library
+library(boot)
+```
+
+```{r}
+music_data <- read.csv("song_dataset_2000_2019.csv")
+
+music_data <- music_data %>%
+  arrange(desc(year))
+
+## Previewing the data
+head(music_data)
+
+# 2000 observations, 18 variables
+
+```
+
+
+```{r}
+## Getting a general overview of the data
+summary(music_data)
+
+## Confirming that each column type is correct
+str(music_data)
+music_data$popularity <- round(music_data$popularity,0) # since we want to use a Poisson distribution to model this
+
+## Note for Future Khushil: You may want to round a lot of the column values to 2dp
+```
+
+
+```{r}
+## Checking to see if dataset has any missing values
+
+sapply(music_data, function(x)sum(is.na(x)))
+
+```
+# BOXPLOTS TO CHECK FOR OUTLIERS
+
+```{r}
+# Boxplot for the response variable: Popularity Scores
+
+ggplot(data = music_data, aes(y = popularity)) +
+  geom_boxplot(fill = "purple") +
+  ggtitle("Boxplot of Popularity Scores") +
+  ylab("Popularity Score")
+
+# Investigating the outliers
+popularity_outliers <- filter(music_data,popularity < 20)
+popularity_outliers
+
+# Let's remove the popularity outliers
+music_data <- filter(music_data, popularity > 40)
+
+```
+
+
+```{r}
+# BOXPLOTS FOR CONTINUOUS VARIABLES
+
+# Boxplot for duration_ms
+ggplot(music_data, aes(y = duration_ms)) +
+  geom_boxplot(fill = "blue") +
+  labs(title = "Boxplot of Duration in Milliseconds", y = "Duration (ms)", x = "") +
+  theme_minimal()
+
+# Boxplot for Danceability
+ggplot(data = music_data, aes(y = danceability)) +
+  geom_boxplot(fill = "green") +
+  ggtitle("Boxplot of Danceability") +
+  ylab("Danceability")
+
+# Boxplot for Energy
+ggplot(data = music_data, aes(y = energy)) +
+  geom_boxplot(fill = "red") +
+  ggtitle("Boxplot of Energy") +
+  ylab("Energy")
+
+# Boxplot for loudness
+ggplot(music_data, aes(y = loudness)) +
+  geom_boxplot(fill = "purple") +
+  labs(title = "Boxplot of Loudness", y = "Loudness (dB)", x = "") +
+  theme_minimal()
+
+# Boxplot for speechiness
+ggplot(music_data, aes(y = speechiness)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Boxplot of Speechiness", y = "Speechiness", x = "") +
+  theme_minimal()
+
+# Boxplot for Acousticness
+ggplot(data = music_data, aes(y = acousticness)) +
+  geom_boxplot(fill = "blue") +
+  ggtitle("Boxplot of Acousticness") +
+  ylab("Acousticness")
+
+# Boxplot for instrumentalness
+ggplot(music_data, aes(y = instrumentalness)) +
+  geom_boxplot(fill = "green") +
+  labs(title = "Boxplot of Instrumentalness", y = "Instrumentalness", x = "") +
+  theme_minimal()
+
+# Boxplot for liveness
+ggplot(music_data, aes(y = liveness)) +
+  geom_boxplot(fill = "red") +
+  labs(title = "Boxplot of Liveness", y = "Liveness", x = "") +
+  theme_minimal()
+
+# Boxplot for valence
+ggplot(music_data, aes(y = valence)) +
+  geom_boxplot(fill = "yellow") +
+  labs(title = "Boxplot of Valence", y = "Valence", x = "") +
+  theme_minimal()
+
+# Boxplot for tempo
+ggplot(music_data, aes(y = tempo)) +
+  geom_boxplot(fill = "cyan") +
+  labs(title = "Boxplot of Tempo", y = "Tempo (BPM)", x = "") +
+  theme_minimal()
+
+```
+# Standardizing the Loudness column using a Min-Max Normalization
+
+```{r}
+min_loudness <- min(music_data$loudness, na.rm = TRUE)
+max_loudness <- max(music_data$loudness, na.rm = TRUE)
+
+# Applying the min-max normalization and creating a new column
+music_data$normalized_loudness <- (music_data$loudness - min_loudness) / (max_loudness - min_loudness) * 100
+
+head(music_data)
+
+# Removing the outliers for loudness (silent songs)
+music_data <- filter(music_data, normalized_loudness > 50)
+
+```
+
+
+# HISTOGRAMS TO CHECK THE SPREAD OF CONTINUOUS VARIABLES
+
+```{r}
+# HISTOGRAM FOR MY TARGETED RESPONSE VARIABLE
+
+# Histogram for Popularity Scores 
+ggplot(data = music_data, aes(x = popularity)) +
+  geom_histogram(binwidth = 5, fill = "purple", color = "black") + 
+  ggtitle("Histogram of Popularity Scores") +
+  xlab("Popularity Score") +
+  ylab("Frequency")
+
+# The histogram is left skewed, which makes sense because we are looking at popular songs. In fact, mean popularity is 60. However, for some reason, there are popular songs that have a score of 0, I need to remove those and anything below 40, because I want to fit my model on only popular songs.
+
+nrow(music_data) #1747 rows, down from 2000 rows
+
+```
+
+
+```{r}
+# HISTOGRAMS FOR THE CONTINUOUS PREDICTOR VARIABLES IN THIS DATASET
+
+# Histogram for Acousticness
+ggplot(data = music_data, aes(x = acousticness)) +
+  geom_histogram(binwidth = 0.1, fill = "blue", color = "black") +
+  ggtitle("Histogram of Acousticness") +
+  xlab("Acousticness") +
+  ylab("Frequency")
+
+# Histogram for Duration in milliseconds
+ggplot(data = music_data, aes(x = duration_ms)) +
+  geom_histogram(binwidth = 30000, color = "black", fill = "blue") +
+  labs(title = "Histogram of Duration in Milliseconds", x = "Duration (ms)", y = "Frequency")
+
+# Histogram for Danceability
+ggplot(data = music_data, aes(x = danceability)) +
+  geom_histogram(binwidth = 0.05, fill = "green", color = "black") +
+  ggtitle("Histogram of Danceability") +
+  xlab("Danceability") +
+  ylab("Frequency")
+
+# Histogram for Energy
+ggplot(data = music_data, aes(x = energy)) +
+  geom_histogram(binwidth = 0.05, fill = "red", color = "black") +
+  ggtitle("Histogram of Energy") +
+  xlab("Energy") +
+  ylab("Frequency")
+
+# Histogram for Instrumentalness
+ggplot(data = music_data, aes(x = instrumentalness)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "green") +
+  labs(title = "Histogram of Instrumentalness", x = "Instrumentalness", y = "Frequency")
+
+# Histogram for Liveness
+ggplot(data = music_data, aes(x = liveness)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "red") +
+  labs(title = "Histogram of Liveness", x = "Liveness", y = "Frequency")
+
+# Histogram for Loudness
+ggplot(data = music_data, aes(x = normalized_loudness)) +
+  geom_histogram(binwidth = 5, color = "black", fill = "purple") +
+  labs(title = "Histogram of Loudness", x = "Loudness (dB)", y = "Frequency")
+
+# Histogram for Speechiness
+ggplot(data = music_data, aes(x = speechiness)) +
+  geom_histogram(binwidth = 0.02, color = "black", fill = "orange") +
+  labs(title = "Histogram of Speechiness", x = "Speechiness", y = "Frequency")
+
+# Histogram for Tempo
+ggplot(data = music_data, aes(x = tempo)) +
+  geom_histogram(binwidth = 5, fill = "pink", color = "black") + 
+  ggtitle("Histogram of Tempo") +
+  xlab("Tempo (BPM)") +
+  ylab("Frequency")
+
+# Histogram for Valence (Postiveness)
+ggplot(data = music_data, aes(x = valence)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "yellow") +
+  labs(title = "Histogram of Valence", x = "Valence", y = "Frequency")
+
+
+
+```
+```{r}
+library(ggplot2)
+library(tidyr)
+
+# Reshape the data from wide to long format
+music_data_long <- pivot_longer(music_data, 
+                                cols = c(popularity, acousticness, duration_ms, danceability, energy, 
+                                         instrumentalness, liveness, normalized_loudness, 
+                                         speechiness, tempo, valence),
+                                names_to = "Predictor", 
+                                values_to = "Value")
+
+# Create histograms for all predictors in one diagram, adjusting the number of rows and columns as needed
+ggplot(music_data_long, aes(x = Value)) +
+  geom_histogram(fill = "#e051ed", color = "black") +
+  facet_wrap(~Predictor, scales = "free", ncol = 3, nrow = 4) + # Adjust 'ncol' as needed
+  labs(title = "Histograms of Preictors + Reponse", x = "Value", y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Improve readability of x-axis labels
+
+```
+
+
+# Applying transformations to acousticness, duration_ms, speechiness, liveness and tempo predictor variables to correct for right skew
+
+```{r}
+music_data$cube_root_acousticness <- music_data$acousticness^(1/3)
+music_data$log_duration_ms <- log(music_data$duration_ms)
+
+#music_data$log_speechiness <- log(music_data$speechiness) 
+# None of the transformations seem to correct the speechiness skew
+
+music_data$log_liveness <- log(music_data$liveness)
+music_data$log_tempo <- log(music_data$tempo)
+
+```
+
+# Plotting histograms of the transformed  variables
+
+```{r}
+# Histogram for cube_root_acousticness
+ggplot(data = music_data, aes(x = cube_root_acousticness)) +
+  geom_histogram(fill = "green", color = "black") +
+  ggtitle("Histogram of cube_root_acousticness") +
+  xlab("cube_root_acousticness") +
+  ylab("Frequency")
+
+# Histogram for log_duration_ms
+ggplot(data = music_data, aes(x = log_duration_ms)) +
+  geom_histogram(fill = "green", color = "black") +
+  ggtitle("Histogram of log_duration_ms") +
+  xlab("log_duration_ms") +
+  ylab("Frequency")
+
+# Histogram for log_liveness
+ggplot(data = music_data, aes(x = log_liveness)) +
+  geom_histogram(fill = "green", color = "black") +
+  ggtitle("Histogram of log_liveness") +
+  xlab("log_liveness") +
+  ylab("Frequency")
+
+# Histogram for log_tempo
+ggplot(data = music_data, aes(x = log_tempo)) +
+  geom_histogram(fill = "green", color = "black") +
+  ggtitle("Histogram of log_tempo") +
+  xlab("log_tempo") +
+  ylab("Frequency")
+
+```
+# Boxplots for the transformed variables
+
+```{r}
+
+# Boxplot for cube_root_acousticness
+ggplot(music_data, aes(y = cube_root_acousticness)) +
+  geom_boxplot(fill = "cyan") +
+  labs(title = "Boxplot of cube_root_acousticness", y = "cube_root_acousticness", x = "") +
+  theme_minimal()
+
+# Let's remove the log_duration_ms outliers
+music_data <- filter(music_data, log_duration_ms < 12.7 & log_duration_ms > 12.0)
+
+# Boxplot for log_duration_ms
+ggplot(music_data, aes(y = log_duration_ms)) +
+  geom_boxplot(fill = "cyan") +
+  labs(title = "Boxplot of log_duration_ms", y = "log_duration_ms", x = "") +
+  theme_minimal()
+
+# Let's remove the log_liveness extreme values as they are messing with the DF Beta estimates
+music_data <- filter(music_data, log_liveness < -1 & log_liveness > -3)
+
+# Boxplot for log_liveness
+ggplot(music_data, aes(y = log_liveness)) +
+  geom_boxplot(fill = "cyan") +
+  labs(title = "Boxplot of log_liveness", y = "log_liveness", x = "") +
+  theme_minimal()
+
+# Let's remove the log_tempo extreme values as they are messing with the DF Beta estimates
+music_data <- filter(music_data, log_tempo < 5.5 & log_tempo > 4.4)
+
+# Boxplot for log_tempo
+ggplot(music_data, aes(y = log_tempo)) +
+  geom_boxplot(fill = "cyan") +
+  labs(title = "Boxplot of log_tempo", y = "log_tempo", x = "") +
+  theme_minimal()
+
+```
+
+
+```{r}
+#  Out of Curiosity, investigating negative songs (low valence)
+music_data_negative <- filter(music_data, valence < 0.125)
+head(music_data_negative)
+```
+
+
+# Barplots for certain categorical variables: Genre, Year and Key
+
+```{r}
+# BAR PLOTS
+
+ggplot(data = music_data, aes(x = year)) +
+  geom_bar(color = "black", fill = "yellow") +
+  labs(title = "Number of Songs Released Over the Years", x = "year", y = "Number of Songs") +
+  theme_minimal()
+
+ggplot(data = music_data, aes(x = genre)) +
+  geom_bar(color = "black", fill = "blue") +
+  labs(title = "Genres of Songs that the Dataset contains", x = "genre", y = "Number of Songs") +
+  theme_minimal()
+
+ggplot(data = music_data, aes(x = key)) +
+  geom_bar(color = "black", fill = "orange") +
+  labs(title = "Keys of the songs in the dataset", x = "key", y = "Number of Songs") +
+  theme_minimal()
+
+```
+
+```{r}
+
+# For genres, we just look at the most popular genres because the dataset contains very many genres
+
+# Counting the number of songs per genre
+genre_counts <- music_data %>%
+  group_by(genre) %>%
+  summarise(Count = n()) %>%
+  filter(Count > 50) 
+
+# Filtering the original data to include only popular genres
+popular_genres <- music_data %>%
+  filter(genre %in% genre_counts$genre)
+
+ggplot(data = popular_genres, aes(x = genre)) +
+  geom_bar(color = "black", fill = "turquoise") +
+  labs(title = "Popular Genres of Songs in the Dataset", x = "Genre", y = "Number of Songs") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+# cHECKING FOR MULTICOLLINEARITY VIA A Correlation Matrix 
+
+```{r}
+
+continuous_vars <- music_data[, c("popularity", "duration_ms", "danceability", "energy", "normalized_loudness", 
+                                  "speechiness", "cube_root_acousticness", "log_liveness", 
+                                  "valence", "log_tempo")]
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(continuous_vars)
+
+# View the correlation matrix
+print(correlation_matrix)
+
+```
+```{r}
+correlation_data <- melt(correlation_matrix)
+
+ggplot(data = correlation_data, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") + 
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limits = c(-1, 1), space = "Lab", 
+                       name="Pearson\nCorrelation") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1)) +
+  theme(axis.text.y = element_text(size = 12)) +
+  labs(x = "", y = "", title = "Correlation Matrix Heatmap") +
+  coord_fixed()
+```
+
+
+# Checking the GLM Assumptions
+
+# Assumption 1: Checking for whether Popularity (Y) follows the correct dsitribution
+ 
+```{r}
+# run the Poisson model building code first then run this
+
+expected_counts <- predict(poisson_model, type = "response")
+
+observed_counts <- music_data$popularity
+
+chi_squared_test_result <- chisq.test(x = observed_counts, p = expected_counts / sum(expected_counts))
+
+print(chi_squared_test_result)
+
+# Conclusion: (p = 0.9782 suggests that there is no significant evidence to reject the null hypothesis. The observed data does not significantly deviate from what would be expected under the Poisson model, indicating a good fit)
+
+```
+
+
+```{r}
+# Calculate the mean of the popularity score
+mean_popularity <- mean(music_data$popularity)
+
+# Calculate the variance of the popularity score
+variance_popularity <- var(music_data$popularity)
+
+# Print the results
+print(paste("Mean of popularity:", mean_popularity))
+print(paste("Variance of popularity:", variance_popularity))
+
+```
+# Given that the variance is larger than the mean, this indicates overdispersion. I may need to switch from a Poisson distirbution to a Negative Binomial
+# distribution (built to handle overdispersion). However let me fit the data first to a Poisson regression and check the goodness of fit.
+
+
+## FITTING THE MODEL
+
+```{r}
+poisson_model <- glm(popularity ~ log_duration_ms + danceability + energy + normalized_loudness + 
+                                  speechiness + cube_root_acousticness + log_liveness + 
+                                  valence + log_tempo, 
+                    data = music_data, family = "poisson")
+
+summary(poisson_model)
+
+```
+# Removing any influentical observations via Cook's Distance
+
+```{r}
+
+cooks_d <- cooks.distance(poisson_model)
+
+# Commonly used threshold is 4/(number of observations)
+threshold <- 4 / length(cooks_d)
+
+# Identify the indices of influential observations
+influential_indices <- which(cooks_d > threshold)
+
+# Remove influential observations from the dataset
+music_data <- music_data[-influential_indices, ]
+
+music_data
+```
+
+
+
+# Looking for Multicollinearity by calculating the VIF values for my Poisson regression model.
+
+```{r}
+vif_values <- vif(poisson_model)
+
+print(vif_values)
+
+# Note: Values above 5 or 10 can indicate multicollinearity
+
+```
+
+
+
+# Assumption 2: Correct Link Function (Log Link) and Assumption 3: Linear Relationship in Link Function and Assumotion 4: Error Independence
+
+## We  need to PLot deviance_residuals against the Predictors (note: deviance residuals are usually calculated for the predictors, not response)
+
+```{r}
+# if you get an error running this code, run the original poisson model building code again
+
+predictors <- list(
+  log_duration_ms = music_data$log_duration_ms,
+  danceability = music_data$danceability,
+  energy = music_data$energy,
+  normalized_loudness = music_data$normalized_loudness,
+  speechiness = music_data$speechiness,
+  cube_root_acousticness = music_data$cube_root_acousticness,
+  log_liveness = music_data$log_liveness,
+  valence = music_data$valence,
+  log_tempo = music_data$log_tempo
+)
+
+res.dev <- residuals(poisson_model, type = "deviance")
+
+
+par(family = 'serif', mfrow = c(1, 1))  
+
+for (predictor_name in names(predictors)) {
+  predictor_data <- predictors[[predictor_name]]
+  
+  plot(predictor_data, res.dev, 
+       xlab = predictor_name, ylab = 'Deviance Residuals',
+       main = paste("Deviance Residuals for", predictor_name))
+  lines(lowess(predictor_data, res.dev), lwd = 2, col = 'blue')
+  abline(h = 0, lty = 'dotted')
+}
+
+#par(mfrow = c(2, 2), family = 'sans')
+
+
+```
+
+# Deviance residuals that stand out: speechiness
+
+# Identifying Influential Points (DFBETAS)
+
+```{r}
+dfbetas_values <- dfbetas(poisson_model)
+
+str(dfbetas_values)
+
+num_predictors <- length(coef(poisson_model)) - 1
+
+predictor_names <- names(coef(poisson_model))[-1]  # Exclude the intercept
+for (i in 1:num_predictors) {
+  plot(music_data[[predictor_names[i]]], dfbetas_values[, i + 1],  # +1 because dfbetas includes intercept
+       xlab = predictor_names[i], ylab = 'DFBETAS',
+       main = paste('DFBETAS for', predictor_names[i]))
+  lines(lowess(music_data[[predictor_names[i]]], dfbetas_values[, i + 1]), lwd = 2, col = 'blue')
+  abline(h = 0, lty = 'dotted')
+  abline(h = -2/sqrt(nrow(music_data)), lty = 'dotted')
+  abline(h = 2/sqrt(nrow(music_data)), lty = 'dotted')
+}
+```
+
+## DFBETAS that stand out: Speechiness
+
+# Now that I have done variable transformations and recalbirated the deviance residuals, lets deal with the influential outlliers using DFFITs 
+
+```{r}
+dffits_values <- dffits(poisson_model)
+
+# Threshold for influential values; 2 * sqrt((number of predictors + 1) / number of observations)
+threshold <- 2 * sqrt((length(coef(poisson_model))) / nrow(music_data))
+
+# Plots the DFFITS values 
+plot(dffits_values, type = "h", main = "DFFITS", ylab = "DFFITS Values")
+abline(h = c(-threshold, threshold), col = "red", lty = 2)
+
+
+influential_points <- which(abs(dffits_values) > threshold)
+print(influential_points)
+
+music_data_clean <- music_data[-influential_points, ]
+
+```
+# Fitting the Poisson Model but this time without influential values
+
+```{r}
+poisson_model_clean <- glm(popularity ~ log_duration_ms + danceability + energy + normalized_loudness + 
+                                   + cube_root_acousticness + log_liveness + 
+                                  valence + log_tempo, 
+                    data = music_data_clean, family = "poisson")
+
+summary(poisson_model_clean)
+```
+# Deviance Residuals on the Poission model fit to a dataset with non-influential values
+```{r}
+
+predictors_poisson_model_clean <- list(
+  duration_ms = music_data_clean$duration_ms,
+  log_duration_ms = music_data_clean$log_duration_ms,
+  danceability = music_data_clean$danceability,
+  energy = music_data_clean$energy,
+  normalized_loudness = music_data_clean$normalized_loudness,
+  cube_root_acousticness = music_data_clean$cube_root_acousticness,
+  log_liveness = music_data_clean$log_liveness,
+  valence = music_data_clean$valence,
+  log_tempo = music_data_clean$log_tempo
+)
+
+
+res.dev <- residuals(poisson_model_clean, type = "deviance")
+
+
+par(family = 'serif', mfrow = c(1, 1))  # Adjust layout as needed
+
+
+for (predictor_name in names(predictors_poisson_model_clean)) {
+  predictor_data <- predictors_poisson_model_clean[[predictor_name]]
+  
+  plot(predictor_data, res.dev, 
+       xlab = predictor_name, ylab = 'Deviance Residuals',
+       main = paste("Deviance Residuals for", predictor_name))
+  lines(lowess(predictor_data, res.dev), lwd = 2, col = 'blue')
+  abline(h = 0, lty = 'dotted')
+}
+
+# Reset default plotting parameters
+par(mfrow = c(1, 1), family = 'sans')
+```
+
+# Identifying Influential Points (DFBETAS) for the clean Poisson Model
+
+```{r}
+dfbetas_values <- dfbetas(poisson_model_clean)
+
+str(dfbetas_values)
+
+num_predictors <- length(coef(poisson_model_clean)) - 1
+
+predictor_names <- names(coef(poisson_model_clean))[-1]  # Exclude the intercept
+for (i in 1:num_predictors) {
+  plot(music_data_clean[[predictor_names[i]]], dfbetas_values[, i + 1],  # +1 because dfbetas includes intercept
+       xlab = predictor_names[i], ylab = 'DFBETAS',
+       main = paste('DFBETAS for', predictor_names[i]))
+  lines(lowess(music_data_clean[[predictor_names[i]]], dfbetas_values[, i + 1]), lwd = 2, col = 'blue')
+  abline(h = 0, lty = 'dotted')
+  abline(h = -2/sqrt(nrow(music_data_clean)), lty = 'dotted')
+  abline(h = 2/sqrt(nrow(music_data_clean)), lty = 'dotted')
+}
+
+
+```
+
+```{r}
+dffits_values <- dffits(poisson_model_clean)
+
+# Threshold for influential values; 2 * sqrt((number of predictors + 1) / number of observations)
+threshold <- 2 * sqrt((length(coef(poisson_model_clean))) / nrow(music_data))
+
+# Plots the DFFITS values 
+plot(dffits_values, type = "h", main = "DFFITS", ylab = "DFFITS Values")
+abline(h = c(-threshold, threshold), col = "red", lty = 2)
+
+
+influential_points <- which(abs(dffits_values) > threshold)
+```
+
+```{r}
+# Assuming 'model' is your fitted glm object
+cooks_d <- cooks.distance(poisson_model_clean)
+
+# To plot Cook's Distance
+plot(cooks_d, type = "h", main = "Cook's Distance", ylab = "Cook's Distance", xlab = "Index")
+abline(h = 4/(length(cooks_d)), col = "red", lty = 2)  # A common rule of thumb for influential points
+
+```
+# Let's check the AIC and BIC values before Forward or Backward Selection
+
+```{r}
+# Calculate the AIC value for the Poisson regression model
+aic_value <- AIC(poisson_model_clean)
+print(aic_value)
+
+# Calculate the BIC value for the Poisson regression model
+bic_value <- BIC(poisson_model_clean)
+print(bic_value)
+```
+
+
+# Stepwise Selection Based on AIC and BIC
+
+```{r}
+# Stepwise selection based on AIC
+
+sel.var.aic <- step(poisson_model_clean, trace = 0, k = 2, direction = "both") 
+select_var_aic <- attr(terms(sel.var.aic), "term.labels")   
+select_var_aic
+
+# Stepwise selection based on BIC
+
+sel.var.bic <- step(poisson_model_clean, trace = 0, k = log(nrow(music_data)), direction = "both") 
+select_var_bic <- attr(terms(sel.var.bic), "term.labels")   
+select_var_bic
+
+
+poisson_model_clean <- glm(popularity ~ log_duration_ms + danceability + energy + normalized_loudness + 
+                                   + cube_root_acousticness + log_liveness + 
+                                  valence + log_tempo, 
+                    data = music_data_clean, family = "poisson")
+
+
+```
+# Let's fit the model based on the variables suggested by the AIC value
+
+```{r}
+# Includes the variables from the the stepwise selection based on the AIC value 
+poisson_model_reduced_AIC <- glm(popularity ~ log_duration_ms + energy + normalized_loudness + valence + log_tempo, 
+                    data = music_data_clean, family = "poisson")
+
+summary(poisson_model_reduced_AIC)
+
+```
+# Let's fit the model based on the variables suggested by the BIC value
+
+```{r}
+# Includes the variables from the the stepwise selection based on the BIC value 
+poisson_model_reduced_BIC <- glm(popularity ~ log_duration_ms + energy + normalized_loudness + valence, data = music_data_clean, family = "poisson")
+
+summary(poisson_model_reduced_BIC)
+
+```
+# Calculating the AIC and BIC values for the reduced models
+
+```{r}
+# REDUCED MODEL based on Stepwise selection based on AIC
+
+aic_value_poisson_model_reduced_AIC <- AIC(poisson_model_reduced_AIC)
+print(aic_value_poisson_model_reduced_AIC)
+
+bic_value_poisson_model_reduced_AIC <- BIC(poisson_model_reduced_AIC)
+print(bic_value_poisson_model_reduced_AIC)
+
+# REDUCED MODEL based on Stepwise selection based on BIC
+
+aic_value_poisson_model_reduced_BIC <- AIC(poisson_model_reduced_BIC)
+print(aic_value_poisson_model_reduced_BIC)
+
+bic_value_poisson_model_reduced_BIC <- BIC(poisson_model_reduced_BIC)
+print(bic_value_poisson_model_reduced_BIC)
+
+
+# To conclude: The poisson_model_reduced_AIC has the smallest AIC value (7818.099) and hence its the best model followed by the poisson_model_reduced_BIC since it has the smallest BIC value (7846.839)
+
+```
+
+# Comparing models via the Likelihood Ratio Test
+
+```{r}
+# In the lrtest() function, the order of the models matters because the test is comparing a null hypothesis (the simpler model) against an alternative hypothesis (the more complex model). The general syntax is lrtest(model_null, model_alternative)
+
+lrtest(poisson_model_reduced_AIC, poisson_model_clean)
+
+lrtest(poisson_model_reduced_BIC, poisson_model_clean)
+
+# Seems like the poisson_model_reduced_BIC is the best because  its p-value is closes to being significantly different from the original poisson_model_clean
+
+```
+
+# Need to calculate the deviance residuals of the reduced model now
+
+```{r}
+# Updated list of predictors for the reduced model
+predictors_poisson_model_reduced <- list(
+  log_duration_ms = music_data_clean$log_duration_ms,
+  energy = music_data_clean$energy,
+  normalized_loudness = music_data_clean$normalized_loudness,
+  valence = music_data_clean$valence
+)
+
+# Calculate deviance residuals for the reduced model
+res.dev.reduced <- residuals(poisson_model_reduced_BIC, type = "deviance")
+
+# Set plotting parameters
+par(family = 'serif', mfrow = c(1, 1))  # Adjust layout as needed
+
+# Loop through the predictors and plot deviance residuals for each
+for (predictor_name in names(predictors_poisson_model_reduced)) {
+  predictor_data <- predictors_poisson_model_reduced[[predictor_name]]
+  
+  plot(predictor_data, res.dev.reduced, 
+       xlab = predictor_name, ylab = 'Deviance Residuals',
+       main = paste("Deviance Residuals for", predictor_name))
+  lines(lowess(predictor_data, res.dev.reduced), lwd = 2, col = 'blue')
+  abline(h = 0, lty = 'dotted')
+}
+
+# Reset default plotting parameters to defaults
+par(mfrow = c(1, 1), family = 'sans')
+
+```
+# # Need to calculate the DFBETAS of the reduced model now
+
+```{r}
+# Calculate DFBETAS for the reduced model
+dfbetas_values_reduced <- dfbetas(poisson_model_reduced_BIC)
+
+# Assuming `music_data_clean` is the dataframe and `poisson_model_reduced_BIC` is your model
+
+# Number of predictors in the reduced model
+num_predictors_reduced <- length(coef(poisson_model_reduced_BIC)) - 1
+
+# Predictor names in the reduced model, excluding the intercept
+predictor_names_reduced <- names(coef(poisson_model_reduced_BIC))[-1]
+
+# Loop through the predictors and plot DFBETAS for each in the reduced model
+for (i in 1:num_predictors_reduced) {
+  plot(music_data_clean[[predictor_names_reduced[i]]], dfbetas_values_reduced[, i + 1],  # +1 to include intercept in indexing
+       xlab = predictor_names_reduced[i], ylab = 'DFBETAS',
+       main = paste('DFBETAS for', predictor_names_reduced[i]))
+  lines(lowess(music_data_clean[[predictor_names_reduced[i]]], dfbetas_values_reduced[, i + 1]), lwd = 2, col = 'blue')
+  abline(h = 0, lty = 'dotted')
+  abline(h = -2/sqrt(nrow(music_data_clean)), lty = 'dotted', col = 'red')  # Guidelines for influential observations
+  abline(h = 2/sqrt(nrow(music_data_clean)), lty = 'dotted', col = 'red')
+}
+
+```
+
+# Validating my Poission regression model via K-fold Cross Validation
+
+```{r}
+# Define a function for k-fold cross-validation
+cross_validate_poisson <- function(data, k) {
+  # Randomly shuffle the dataset
+  set.seed(123) # For reproducibility
+  data <- data[sample(nrow(data)), ]
+  
+  # Perform k-fold cross-validation
+  cv_results <- cv.glm(data, poisson_model_reduced_AIC, K = k)
+  
+  return(cv_results$delta)
+}
+
+# Perform 10-fold cross-validation
+cv_error <- cross_validate_poisson(music_data_clean, 10)
+print(cv_error)
+
+```
+

@@ -1,0 +1,299 @@
+---
+title: "STA303 Proejct Part 1: Exploratory Data Analysis"
+output: html_notebook
+---
+
+
+```{r}
+setwd("C:\\Users\\USER\\OneDrive - University of Toronto\\UofT Classes\\STA303\\STA303 Project")
+
+music_data <- read.csv("data_by_genres.csv")
+
+library(ggplot2)
+library(lmtest)
+library(car)
+library(knitr) ## To create nice tables
+knitr::opts_chunk$set(echo = TRUE)
+
+## Previewing the data
+head(music_data)
+
+```
+
+
+```{r}
+## Getting a general overview of the data
+summary(music_data)
+```
+
+
+```{r}
+## Checking to see if dataset has any misisng values
+colSums(is.na(music_data))
+```
+
+```{r}
+## Confirming that each column type is correct
+str(music_data)
+music_data$popularity <- round(music_data$popularity) # since we want to use a Poisson distribution to model this
+```
+# Histograms of the distributions of the Continuous variables 
+
+```{r}
+# HISTOGRAM FOR MY TARGETED RESPONSE VARIABLE
+
+# Histogram for Popularity Scores 
+ggplot(data = music_data, aes(x = popularity)) +
+  geom_histogram(binwidth = 5, fill = "purple", color = "black") + # Adjust binwidth as necessary
+  ggtitle("Histogram of Popularity Scores") +
+  xlab("Popularity Score") +
+  ylab("Frequency")
+```
+
+
+```{r}
+# HISTOGRAMS FOR THE CONTINUOUS PREDICTOR VARIABLES IN THIS DATASET
+
+# Histogram for Acousticness
+ggplot(data = music_data, aes(x = acousticness)) +
+  geom_histogram(binwidth = 0.1, fill = "blue", color = "black") +
+  ggtitle("Histogram of Acousticness") +
+  xlab("Acousticness") +
+  ylab("Frequency")
+
+# Histogram for Duration in milliseconds
+ggplot(data = music_data, aes(x = duration_ms)) +
+  geom_histogram(binwidth = 30000, color = "black", fill = "blue") +
+  labs(title = "Histogram of Duration in Milliseconds", x = "Duration (ms)", y = "Frequency")
+
+# Histogram for Danceability
+ggplot(data = music_data, aes(x = danceability)) +
+  geom_histogram(binwidth = 0.1, fill = "green", color = "black") +
+  ggtitle("Histogram of Danceability") +
+  xlab("Danceability") +
+  ylab("Frequency")
+
+# Histogram for Energy
+ggplot(data = music_data, aes(x = energy)) +
+  geom_histogram(binwidth = 0.1, fill = "red", color = "black") +
+  ggtitle("Histogram of Energy") +
+  xlab("Energy") +
+  ylab("Frequency")
+
+# Histogram for Instrumentalness
+ggplot(data = music_data, aes(x = instrumentalness)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "green") +
+  labs(title = "Histogram of Instrumentalness", x = "Instrumentalness", y = "Frequency")
+
+# Histogram for Liveness
+ggplot(data = music_data, aes(x = liveness)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "red") +
+  labs(title = "Histogram of Liveness", x = "Liveness", y = "Frequency")
+
+# Histogram for Loudness
+ggplot(data = music_data, aes(x = loudness)) +
+  geom_histogram(binwidth = 1, color = "black", fill = "purple") +
+  labs(title = "Histogram of Loudness", x = "Loudness (dB)", y = "Frequency")
+
+# Histogram for Speechiness
+ggplot(data = music_data, aes(x = speechiness)) +
+  geom_histogram(binwidth = 0.02, color = "black", fill = "orange") +
+  labs(title = "Histogram of Speechiness", x = "Speechiness", y = "Frequency")
+
+# Histogram for Tempo
+ggplot(data = music_data, aes(x = tempo)) +
+  geom_histogram(binwidth = 5, fill = "yellow", color = "black") + 
+  ggtitle("Histogram of Tempo") +
+  xlab("Tempo (BPM)") +
+  ylab("Frequency")
+
+# Histogram for Valence (Postiveness)
+ggplot(data = music_data, aes(x = valence)) +
+  geom_histogram(binwidth = 0.05, color = "black", fill = "yellow") +
+  labs(title = "Histogram of Valence", x = "Valence", y = "Frequency")
+
+
+
+```
+
+Boxplots of the distributions of the Continuous Variables
+
+```{r}
+# BOXPLOT FOR REPONSE VARIABLE
+
+# Boxplot for Popularity Scores
+ggplot(data = music_data, aes(y = popularity)) +
+  geom_boxplot(fill = "purple") +
+  ggtitle("Boxplot of Popularity Scores") +
+  ylab("Popularity Score")
+
+```
+
+
+```{r}
+# BOXPLOTS FOR THE CONTINUOUS PREDICTOR VARIABLES IN THIS DATASET
+
+# Boxplot for duration_ms
+ggplot(music_data, aes(y = duration_ms)) +
+  geom_boxplot(fill = "blue") +
+  labs(title = "Boxplot of Duration in Milliseconds", y = "Duration (ms)", x = "") +
+  theme_minimal()
+
+# Boxplot for Danceability
+ggplot(data = music_data, aes(y = danceability)) +
+  geom_boxplot(fill = "green") +
+  ggtitle("Boxplot of Danceability") +
+  ylab("Danceability")
+
+# Boxplot for Energy
+ggplot(data = music_data, aes(y = energy)) +
+  geom_boxplot(fill = "red") +
+  ggtitle("Boxplot of Energy") +
+  ylab("Energy")
+
+# Boxplot for loudness
+ggplot(music_data, aes(y = loudness)) +
+  geom_boxplot(fill = "purple") +
+  labs(title = "Boxplot of Loudness", y = "Loudness (dB)", x = "") +
+  theme_minimal()
+
+# Boxplot for speechiness
+ggplot(music_data, aes(y = speechiness)) +
+  geom_boxplot(fill = "orange") +
+  labs(title = "Boxplot of Speechiness", y = "Speechiness", x = "") +
+  theme_minimal()
+
+# Boxplot for Acousticness
+ggplot(data = music_data, aes(y = acousticness)) +
+  geom_boxplot(fill = "blue") +
+  ggtitle("Boxplot of Acousticness") +
+  ylab("Acousticness")
+
+# Boxplot for instrumentalness
+ggplot(music_data, aes(y = instrumentalness)) +
+  geom_boxplot(fill = "green") +
+  labs(title = "Boxplot of Instrumentalness", y = "Instrumentalness", x = "") +
+  theme_minimal()
+
+# Boxplot for liveness
+ggplot(music_data, aes(y = liveness)) +
+  geom_boxplot(fill = "red") +
+  labs(title = "Boxplot of Liveness", y = "Liveness", x = "") +
+  theme_minimal()
+
+# Boxplot for valence
+ggplot(music_data, aes(y = valence)) +
+  geom_boxplot(fill = "yellow") +
+  labs(title = "Boxplot of Valence", y = "Valence", x = "") +
+  theme_minimal()
+
+# Boxplot for tempo
+ggplot(music_data, aes(y = tempo)) +
+  geom_boxplot(fill = "cyan") +
+  labs(title = "Boxplot of Tempo", y = "Tempo (BPM)", x = "") +
+  theme_minimal()
+
+
+
+
+
+```
+
+Scatterplots to explore the relationship between the Continuos predictor variables and the Reponse variable (popularity score)
+
+```{r}
+# Scatter plot for acousticness vs popularity
+ggplot(music_data, aes(x = acousticness, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Acousticness vs Popularity", x = "Acousticness", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for danceability vs popularity
+ggplot(music_data, aes(x = danceability, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Danceability vs Popularity", x = "Danceability", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for duration_ms vs popularity
+ggplot(music_data, aes(x = duration_ms, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Duration (ms) vs Popularity", x = "Duration (ms)", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for energy vs popularity
+ggplot(music_data, aes(x = energy, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Energy vs Popularity", x = "Energy", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for instrumentalness vs popularity
+ggplot(music_data, aes(x = instrumentalness, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Instrumentalness vs Popularity", x = "Instrumentalness", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for liveness vs popularity
+ggplot(music_data, aes(x = liveness, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Liveness vs Popularity", x = "Liveness", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for loudness vs popularity
+ggplot(music_data, aes(x = loudness, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Loudness vs Popularity", x = "Loudness", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for speechiness vs popularity
+ggplot(music_data, aes(x = speechiness, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Speechiness vs Popularity", x = "Speechiness", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for tempo vs popularity
+ggplot(music_data, aes(x = tempo, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Tempo vs Popularity", x = "Tempo", y = "Popularity") +
+  theme_minimal()
+
+# Scatter plot for valence vs popularity
+ggplot(music_data, aes(x = valence, y = popularity)) +
+  geom_point() +
+  labs(title = "Scatter plot of Valence vs Popularity", x = "Valence", y = "Popularity") +
+  theme_minimal()
+
+```
+Correlation Analysis to check for multicollinearity between predictors
+
+```{r}
+
+continuous_vars <- music_data[, c("acousticness", "danceability", "duration_ms", "energy", "instrumentalness", "liveness", "loudness", "speechiness", "tempo", "valence", "popularity")]
+
+
+correlation_matrix <- cor(continuous_vars, use = "complete.obs")  
+
+print(correlation_matrix)
+
+
+
+```
+
+Using a variance inflation test to check for whether there's multicollinearity 
+
+```{r}
+## DONT RUN THIS
+
+glm_model <- glm(popularity ~ acousticness + danceability + duration_ms +   energy + 
+              instrumentalness + liveness + loudness + speechiness + tempo + 
+              valence, data = music_data, family = poisson)
+
+# Calculating VIF from the glm model
+vif_values <- vif(glm_model, lp = glm_model$linear.predictors)
+
+print(vif_values)
+```
+
+
+
+
+
